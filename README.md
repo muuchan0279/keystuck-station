@@ -47,6 +47,18 @@ cat /sys/bus/usb/devices/<X-Y>/product     # e.g. "N-KEY Device"
 
 If you see no resets, your stuck keys have a different cause and this tool won't help.
 
+## Measured effect
+
+One prefix (a Proton game), same machine, same session:
+
+| | USB resets |
+|---|---|
+| before the fix | **134 in 5 minutes** |
+| after the fix, 26 minutes of play | **0** |
+
+The offending device was an ASUS N-KEY built-in keyboard (`0b05:19b6`).
+Verified on Fedora/Nobara, KDE Plasma 6 (Wayland).
+
 ## What it changes
 
 Exactly one line, in each prefix's `system.reg`:
