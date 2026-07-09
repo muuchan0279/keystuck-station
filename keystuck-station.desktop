@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=KEYSTUCK STATION
+Comment=Ledger of the DisableHidraw workaround across Proton/Wine prefixes
+# Edit this path to where you cloned the repo:
+Exec=/path/to/keystuck-station/run.sh
+Icon=input-keyboard
+Terminal=false
+Categories=Utility;
+StartupWMClass=keystuck-station
