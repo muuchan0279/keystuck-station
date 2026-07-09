@@ -103,6 +103,27 @@ Nothing runs as root. It only writes to prefixes in your home directory.
   will appear.
 - `[戻す]` / *Revert* restores from the backup, or removes just that line if the backup is gone.
 
+## The banner
+
+The top banner reads the kernel log for USB resets. It reports two different numbers,
+because they answer two different questions:
+
+| Banner | Meaning |
+| --- | --- |
+| `⚠ RESET STORM n回/60s` | 5+ resets in the **last 60 seconds** — it is happening *right now* |
+| `◍ 直近5分に n回 — 今は収まっている` | a storm happened within the last 5 minutes but has since stopped (the timestamp is the last reset) |
+| `USBリセット n回/5min — 散発` | a handful of resets; probably an ordinary plug/unplug |
+| `USBリセット 0回/5min — 静穏` | quiet |
+
+A five-minute count keeps saying "storm" for five minutes after the game exits, so it can
+never tell you whether the problem is live. Only the 60-second window can. The banner is
+stamped with the time it was taken and refreshes itself every 20 seconds; `↻` re-reads both
+the ledger and the kernel log at once.
+
+Note that a reset storm is evidence of *some* device being hammered — not proof that this
+particular bug is the cause. A storm while every relevant prefix reads `APPLIED` means
+something other than `winebus` is doing the probing.
+
 ## Doing it by hand
 
 If you'd rather not run a GUI, this is the whole fix — with the game **fully closed**:

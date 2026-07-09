@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
@@ -257,15 +258,76 @@ def revert_patch(reg_path):
         f.write(text)
 
 
-def reset_storm_count(minutes=5):
-    """直近のUSBリセット連発件数。詰まりが今まさに起きているかの物差し。"""
+RESET_RE = re.compile(r"reset .*speed USB device")
+
+# 嵐は 1〜2 秒間隔で来る。60秒窓に5回入っていれば「今まさに」と言い切れる。
+# 抜き差し1回で2〜3件は普通に出るので、そこは嵐と呼ばない。
+LIVE_WINDOW_SEC = 60
+LIVE_THRESHOLD = 5
+RECENT_THRESHOLD = 10
+
+
+def reset_probe(minutes=5):
+    """直近のUSBリセットを時刻付きで拾う。
+
+    「5分間に何回」は嵐が終わった後も5分間そう言い続ける。今起きているかは
+    直近60秒だけを見ないと分からない。両者は別の数字なので別々に返す。
+    """
     try:
         out = subprocess.run(
-            ["journalctl", "-k", "--since", f"{minutes} minutes ago", "--no-pager"],
+            ["journalctl", "-k", "--since", f"{minutes} minutes ago",
+             "--no-pager", "-o", "short-iso"],
             capture_output=True, text=True, timeout=8).stdout
     except Exception:
         return None
-    return len(re.findall(r"reset .*speed USB device", out))
+
+    stamps = []
+    for line in out.splitlines():
+        if not RESET_RE.search(line):
+            continue
+        try:
+            stamps.append(datetime.fromisoformat(line.split(None, 1)[0]))
+        except (ValueError, IndexError):
+            pass
+
+    now = datetime.now().astimezone()
+    live = [t for t in stamps
+            if (now - t).total_seconds() <= LIVE_WINDOW_SEC]
+    return {
+        "total": len(stamps),
+        "live": len(live),
+        "last": stamps[-1] if stamps else None,
+        "minutes": minutes,
+        "at": now,
+    }
+
+
+def storm_banner(p):
+    """probe結果 -> (バナー文, 色)。GUI から切り離して単体で試せるようにしてある。"""
+    if p is None:
+        return "USBリセット: 読み取り不可(journal権限)", DIM
+
+    stamp = p["at"].strftime("%H:%M:%S")
+    mins = p["minutes"]
+
+    if p["live"] >= LIVE_THRESHOLD:
+        text = (f"⚠ RESET STORM {p['live']}回/{LIVE_WINDOW_SEC}s"
+                f" — 今キー詰まりが起きている")
+        color = NEON_RED
+    elif p["total"] >= RECENT_THRESHOLD:
+        last = p["last"].strftime("%H:%M:%S")
+        text = (f"◍ 直近{mins}分に {p['total']}回 — 今は収まっている"
+                f"(最後 {last})")
+        color = NEON_AMB
+    elif p["total"] > 0:
+        text = (f"USBリセット {p['total']}回/{mins}min"
+                f" — 散発(通常の抜き差しかも)")
+        color = NEON_AMB
+    else:
+        text = f"USBリセット 0回/{mins}min — 静穏"
+        color = NEON_GRN
+
+    return f"{text}  [{stamp} 時点]", color
 
 
 HELP_TEXT = """<b>このアプリが書き換えるもの</b><br>
@@ -462,6 +524,12 @@ class KeystuckStation(QFrame):
         self.tick.timeout.connect(self._tick)
         self.tick.start(1000)
 
+        # 開きっぱなしのバナーが古い嵐を指し続けないよう、journal だけ定期に見直す。
+        # 台帳のディスク走査は重いのでここには載せない(↻ 専用)。
+        self.storm_tick = QTimer(self)
+        self.storm_tick.timeout.connect(self._refresh_banner)
+        self.storm_tick.start(20_000)
+
     # -- chrome ---------------------------------------------------
     def _build_titlebar(self):
         bar = QWidget()
@@ -482,6 +550,7 @@ class KeystuckStation(QFrame):
         self.pin_btn.setObjectName("pin")
         self.refresh_btn = QPushButton("↻")
         self.refresh_btn.setObjectName("refresh")
+        self.refresh_btn.setToolTip("台帳を再スキャン + USBリセットを再チェック")
         self.min_btn = QPushButton("─")
         self.min_btn.setObjectName("min")
         close = QPushButton("✕")
@@ -685,22 +754,16 @@ class KeystuckStation(QFrame):
         self.all_btn.setEnabled(bool(missing))
 
     def refresh(self):
+        """↻ の中身。台帳(ディスク)と嵐(journal)の両方を取り直す。"""
         self._rows = scan_prefixes()
         self._rebuild()
+        self._refresh_banner()
 
-        storm = reset_storm_count()
-        if storm is None:
-            self.banner.setText("USBリセット: 読み取り不可(journal権限)")
-            self.banner.setStyleSheet(f"color:{DIM};")
-        elif storm >= 10:
-            self.banner.setText(f"⚠ RESET STORM {storm}回/5min — 今キー詰まりが起きている")
-            self.banner.setStyleSheet(f"color:{NEON_RED};")
-        elif storm > 0:
-            self.banner.setText(f"USBリセット {storm}回/5min — 散発(通常の抜き差しかも)")
-            self.banner.setStyleSheet(f"color:{NEON_AMB};")
-        else:
-            self.banner.setText("USBリセット 0回/5min — 静穏")
-            self.banner.setStyleSheet(f"color:{NEON_GRN};")
+    def _refresh_banner(self):
+        """journal だけ見る軽い方。自動ポーリングもここを叩く。"""
+        text, color = storm_banner(reset_probe())
+        self.banner.setText(text)
+        self.banner.setStyleSheet(f"color:{color};")
 
     def _on_action(self, row):
         try:
