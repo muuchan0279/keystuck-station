@@ -64,9 +64,13 @@ Requires Python 3 and PySide6:
 
 ```bash
 pip install --user PySide6
-git clone <this repo> keystuck-station
+git clone https://github.com/muuchan0279/keystuck-station.git
 cd keystuck-station && ./run.sh
 ```
+
+To add it to your application menu, edit the `Exec=` path in
+`keystuck-station.desktop`, copy it to `~/.local/share/applications/`, and run
+`update-desktop-database ~/.local/share/applications`.
 
 It scans, in whatever exists: native Steam (`~/.local/share/Steam`, `~/.steam/steam`),
 Flatpak Steam, extra Steam library folders from `libraryfolders.vdf`, XIVLauncher
